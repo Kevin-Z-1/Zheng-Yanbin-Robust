@@ -1,0 +1,125 @@
+library(ggplot2)
+
+data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv")
+
+colnames(data)[1] <- "date"
+colnames(data) <- trimws(colnames(data))  
+
+data$date <- as.POSIXct(data$date, format = "%Y-%m-%d %H:%M:%S")  
+data <- subset(data, date >= as.POSIXct("1971-01-01") & date <= as.POSIXct("2024-10-31"))
+
+data$date <- format(data$date, "%Y-%m")
+
+data$date <- as.Date(paste0(data$date, "-01"), format = "%Y-%m-%d")
+
+ggplot(data, aes(x = date, y = GBP.to.JPY)) +
+  geom_line(color = "blue", size = 1) +  
+  labs(
+    title = "GBP to JPY Exchange Rate (Year-Month)",  
+    x = "Year-Month",  
+    y = "Exchange Rate"  
+  ) +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y-%m") +  # 每 2 年一个刻度
+  theme_minimal() +  
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  
+    plot.title = element_text(hjust = 0.5)  
+  )
+
+
+
+
+library(ggplot2)
+
+# ----------------------------
+data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv")
+
+colnames(data)[1] <- "date"
+colnames(data) <- trimws(colnames(data))
+
+data$date <- as.POSIXct(data$date, format = "%Y-%m-%d %H:%M:%S")
+data <- subset(data, date >= as.POSIXct("1971-01-01") & date <= as.POSIXct("2024-10-31"))
+
+data$date <- format(data$date, "%Y-%m")
+data$date <- as.Date(paste0(data$date, "-01"), format = "%Y-%m-%d")
+
+# ----------------------------
+# 2. Hampel filter
+# ----------------------------
+hampel_filter <- function(x, window_size = 11, k = 2) {
+  n <- length(x)
+  x_clean <- x
+  for (i in 1:n) {
+    start <- max(1, i - window_size)
+    end <- min(n, i + window_size)
+    window_data <- x[start:end]
+    
+    median_val <- median(window_data, na.rm = TRUE)
+    mad_val <- median(abs(window_data - median_val), na.rm = TRUE)
+    
+    lower_bound <- median_val - k * mad_val
+    upper_bound <- median_val + k * mad_val
+    if (x[i] < lower_bound || x[i] > upper_bound) {
+      x_clean[i] <- median_val
+    }
+  }
+  return(x_clean)
+}
+
+# ----------------------------
+# 3. find outlier
+# ----------------------------
+identify_outliers <- function(x, window_size = 11, k = 2) {
+  n <- length(x)
+  is_outlier <- rep(FALSE, n)
+  
+  for (i in 1:n) {
+    start <- max(1, i - window_size)
+    end <- min(n, i + window_size)
+    window_data <- x[start:end]
+    
+    median_val <- median(window_data, na.rm = TRUE)
+    mad_val <- median(abs(window_data - median_val), na.rm = TRUE)
+    
+    lower_bound <- median_val - k * mad_val
+    upper_bound <- median_val + k * mad_val
+    
+    if (x[i] < lower_bound || x[i] > upper_bound) {
+      is_outlier[i] <- TRUE
+    }
+  }
+  return(is_outlier)
+}
+
+#
+data$GBP_JPY_hampel <- hampel_filter(data$GBP.to.JPY, window_size = 11, k = 2)
+data$is_outlier <- identify_outliers(data$GBP.to.JPY, window_size = 11, k = 2)
+
+# ----------------------------
+# 4. plot graph
+# ----------------------------
+ggplot(data) +
+  # original
+  geom_line(aes(x = date, y = GBP.to.JPY), color = "gray", alpha = 0.5, size = 1) +
+  # Hampel 
+  geom_line(aes(x = date, y = GBP_JPY_hampel), color = "blue", size = 1) +
+  # outlier
+  geom_point(
+    data = data[data$is_outlier, ],
+    aes(x = date, y = GBP.to.JPY),
+    color = "red",
+    size = 2,
+    shape = 21,
+    fill = "red"
+  ) +
+  labs(
+    title = "Hampel Filter: Highlighting Outliers in GBP/JPY Exchange Rate (1971-2024)",
+    x = "Year-Month",
+    y = "Exchange Rate"
+  ) +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y-%m") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
