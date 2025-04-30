@@ -1,0 +1,34 @@
+data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv")
+
+if (!require("rpca")) install.packages("rpca")
+library(rpca)
+
+# to matrix
+ts_matrix <- matrix(data$GBP.to.JPY, ncol = 1)
+
+# Robust PCA
+rpca_result <- rpca(ts_matrix, lambda = 1/sqrt(max(nrow(ts_matrix), ncol(ts_matrix))))
+
+
+low_rank <- rpca_result$L
+sparse <- rpca_result$S
+
+# combine
+data$GBP_JPY_lowrank <- low_rank
+data$GBP_JPY_sparse <- sparse
+
+ggplot(data) +
+  geom_line(aes(x = date, y = GBP_JPY_lowrank), color = "darkgreen", size = 1) +
+  geom_point(aes(x = date, y = GBP_JPY_sparse), color = "red", size = 1, alpha = 0.5) +
+  labs(
+    title = "Robust PCA Decomposition: GBP/JPY Exchange Rate",
+    x = "Year-Month",
+    y = "Exchange Rate",
+    caption = "Green: Low-rank (trend), Red: Sparse (outliers)"
+  ) +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y-%m") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
