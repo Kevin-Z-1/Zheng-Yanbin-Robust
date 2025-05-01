@@ -1,0 +1,94 @@
+
+# ================================
+if (!require("ggplot2")) install.packages("ggplot2")
+if (!require("rpca")) install.packages("rpca")
+library(ggplot2)
+library(rpca)
+
+# ================================
+# 2. load
+# ================================
+data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv")
+colnames(data)[1] <- "date"
+colnames(data) <- trimws(colnames(data))
+
+data$date <- as.POSIXct(data$date, format = "%Y-%m-%d %H:%M:%S")
+data <- subset(data, date >= as.POSIXct("1971-01-01") & date <= as.POSIXct("2024-10-31"))
+data$date <- as.Date(format(data$date, "%Y-%m-01"))
+
+# ================================
+# 3.  log return）
+# ================================
+data$log_returns <- c(NA, 100 * diff(log(data$GBP.to.JPY)))
+data <- data[-1, ]  
+rownames(data) <- NULL
+
+# ================================
+# 4. Hampel 
+# ================================
+hampel_filter <- function(x, window_size = 11, k = 2) {
+  n <- length(x)
+  x_clean <- x
+  for (i in 1:n) {
+    if (is.na(x[i])) next
+    start <- max(1, i - window_size)
+    end <- min(n, i + window_size)
+    window_data <- x[start:end]
+    median_val <- median(window_data, na.rm = TRUE)
+    mad_val <- median(abs(window_data - median_val), na.rm = TRUE)
+    lower_bound <- median_val - k * mad_val
+    upper_bound <- median_val + k * mad_val
+    if (!is.na(x[i]) && (x[i] < lower_bound || x[i] > upper_bound)) {
+      x_clean[i] <- median_val
+    }
+  }
+  return(x_clean)
+}
+
+data$log_return_hampel <- hampel_filter(data$log_returns)
+
+# ================================
+# 5. RPCA 
+# ================================
+rpca_result <- rpca(matrix(data$log_returns, ncol = 1))
+data$log_return_rpca <- as.numeric(rpca_result$L)
+
+# ================================
+# 6. original Log Return
+# ================================
+p1 <- ggplot(data, aes(x = date, y = log_returns)) +
+  geom_line(color = "gray40", size = 0.8) +
+  labs(title = "Original Log Returns of GBP/JPY", x = "Date", y = "Log Return") +
+  scale_x_date(date_breaks = "5 years", date_labels = "%Y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+# ================================
+# 7. Hampel 
+# ================================
+p2 <- ggplot(data, aes(x = date, y = log_return_hampel)) +
+  geom_line(color = "blue", size = 0.8) +
+  labs(title = "Log Returns after Hampel Filter", x = "Date", y = "Smoothed Log Return") +
+  scale_x_date(date_breaks = "5 years", date_labels = "%Y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+# ================================
+# 8. RPCA  Log Return
+# ================================
+p3 <- ggplot(data, aes(x = date, y = log_return_rpca)) +
+  geom_line(color = "red", size = 0.8) +
+  labs(title = "Log Returns after RPCA Decomposition", x = "Date", y = "Low-Rank Log Return") +
+  scale_x_date(date_breaks = "5 years", date_labels = "%Y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5))
+
+# ================================
+# 9. plot
+# ================================
+print(p1)
+print(p2)
+print(p3)
