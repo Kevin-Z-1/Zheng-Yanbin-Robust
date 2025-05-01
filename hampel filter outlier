@@ -1,6 +1,7 @@
-library(ggplot2)
+library(ggplot2) 
 
-data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv")
+data <- read.csv("https://raw.githubusercontent.com/Kevin-Z-1/Zheng-Yanbin-Robust/main/388_converted.csv")
+
 
 colnames(data)[1] <- "date"
 colnames(data) <- trimws(colnames(data))  
@@ -31,7 +32,7 @@ ggplot(data, aes(x = date, y = GBP.to.JPY)) +
 
 library(ggplot2)
 
-# ----------------------------
+
 data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv")
 
 colnames(data)[1] <- "date"
@@ -43,9 +44,9 @@ data <- subset(data, date >= as.POSIXct("1971-01-01") & date <= as.POSIXct("2024
 data$date <- format(data$date, "%Y-%m")
 data$date <- as.Date(paste0(data$date, "-01"), format = "%Y-%m-%d")
 
-# ----------------------------
+
 # 2. Hampel filter
-# ----------------------------
+
 hampel_filter <- function(x, window_size = 11, k = 2) {
   n <- length(x)
   x_clean <- x
@@ -66,9 +67,9 @@ hampel_filter <- function(x, window_size = 11, k = 2) {
   return(x_clean)
 }
 
-# ----------------------------
+
 # 3. find outlier
-# ----------------------------
+
 identify_outliers <- function(x, window_size = 11, k = 2) {
   n <- length(x)
   is_outlier <- rep(FALSE, n)
@@ -95,9 +96,9 @@ identify_outliers <- function(x, window_size = 11, k = 2) {
 data$GBP_JPY_hampel <- hampel_filter(data$GBP.to.JPY, window_size = 11, k = 2)
 data$is_outlier <- identify_outliers(data$GBP.to.JPY, window_size = 11, k = 2)
 
-# ----------------------------
+
 # 4. plot graph
-# ----------------------------
+
 ggplot(data) +
   # original
   geom_line(aes(x = date, y = GBP.to.JPY), color = "gray", alpha = 0.5, size = 1) +
