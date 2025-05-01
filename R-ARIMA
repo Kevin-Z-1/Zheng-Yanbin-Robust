@@ -1,0 +1,162 @@
+# ----------------------------
+library(robustbase)
+library(rpca)
+library(knitr)
+library(kableExtra)
+
+# ----------------------------
+# 1. prepare
+# ----------------------------
+data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv", stringsAsFactors = FALSE)
+colnames(data)[1] <- "date"
+colnames(data) <- trimws(colnames(data))
+data$date <- as.POSIXct(data$date, format = "%Y-%m-%d %H:%M:%S")
+data <- subset(data, date >= as.POSIXct("1993-02-28") & date <= as.POSIXct("2024-10-31"))
+data$date <- as.Date(format(data$date, "%Y-%m-01"))
+
+log_returns <- 100 * diff(log(data$GBP.to.JPY))
+data <- data[-1, ]  
+data$log_returns <- log_returns
+
+# ----------------------------
+# 2. Hampel 
+# ----------------------------
+hampel_filter <- function(x, window_size = 11, k = 2) {
+  n <- length(x)
+  x_clean <- x
+  for (i in 1:n) {
+    if (is.na(x[i])) next
+    start <- max(1, i - window_size)
+    end <- min(n, i + window_size)
+    window_data <- x[start:end]
+    median_val <- median(window_data, na.rm = TRUE)
+    mad_val <- median(abs(window_data - median_val), na.rm = TRUE)
+    lower_bound <- median_val - k * mad_val
+    upper_bound <- median_val + k * mad_val
+    if (!is.na(x[i]) && (x[i] < lower_bound || x[i] > upper_bound)) {
+      x_clean[i] <- median_val
+    }
+  }
+  return(x_clean)
+}
+hampel_log_returns <- hampel_filter(data$log_returns)
+
+# ----------------------------
+# 3. RPCA 
+# ----------------------------
+apply_rpca <- function(series) {
+  rpca_result <- rpca(as.matrix(series))
+  low_rank <- as.numeric(rpca_result$L)
+  return(low_rank)
+}
+rpca_log_returns <- apply_rpca(data$log_returns)
+
+# ----------------------------
+# 4. first di
+# ----------------------------
+diff_hampel_log_returns <- diff(hampel_log_returns)
+diff_rpca_log_returns <- diff(rpca_log_returns)
+
+# ----------------------------
+# 5. rolling
+# ----------------------------
+rolling_forecast_robust_ar <- function(data, ar_order = 1, window_size, test_length) {
+  forecast_results <- c()
+  for (i in 1:(length(data) - window_size - test_length)) {
+    train_series <- data[i:(i + window_size - 1)]
+    if (var(train_series, na.rm = TRUE) == 0 || any(is.na(train_series))) {
+      forecast_results <- c(forecast_results, NA)
+      next
+    }
+    df <- data.frame(y = train_series[(ar_order + 1):length(train_series)])
+    for (j in 1:ar_order) {
+      df[[paste0("lag", j)]] <- train_series[(ar_order + 1 - j):(length(train_series) - j)]
+    }
+    formula_str <- paste("y ~", paste(paste0("lag", 1:ar_order), collapse = " + "))
+    model <- lmrob(as.formula(formula_str), data = df)
+    
+    latest_lags <- tail(train_series, ar_order)
+    newdata <- as.data.frame(t(latest_lags))
+    colnames(newdata) <- paste0("lag", 1:ar_order)
+    
+    pred <- predict(model, newdata = newdata)
+    forecast_results <- c(forecast_results, pred[1])
+  }
+  return(forecast_results)
+}
+
+# ----------------------------
+# 6. Rolling forecasts are aligned with true values
+# ----------------------------
+window_size <- floor(0.8 * length(diff_hampel_log_returns))
+
+fc_arima_hampel <- rolling_forecast_robust_ar(diff_hampel_log_returns, ar_order = 1, window_size, test_length = 1)
+fc_arima_rpca   <- rolling_forecast_robust_ar(diff_rpca_log_returns, ar_order = 1, window_size, test_length = 1)
+
+# ⚠️Correct alignment:
+test_actual <- diff_hampel_log_returns[(window_size + 1):(length(diff_hampel_log_returns) - 1)]
+
+# ----------------------------
+# 7. SR + PT
+# ----------------------------
+calculate_sr_pt <- function(actual, predicted, threshold = NULL) {
+  if (!is.null(threshold)) {
+    sr <- mean((sign(actual) == sign(predicted)) & (abs(actual - predicted) > threshold), na.rm = TRUE)
+  } else {
+    sr <- mean(sign(actual) == sign(predicted), na.rm = TRUE)
+  }
+  
+  p_actual_up <- mean(actual > 0, na.rm = TRUE)
+  p_predicted_up <- mean(predicted > 0, na.rm = TRUE)
+  p_star <- p_actual_up * p_predicted_up + (1 - p_actual_up) * (1 - p_predicted_up)
+  
+  if (!is.na(p_star) && p_star > 0 && p_star < 1) {
+    pt <- (sr - p_star) / sqrt(p_star * (1 - p_star) / length(actual))
+  } else {
+    pt <- NA
+  }
+  return(c(SR = sr, PT = pt))
+}
+
+# ----------------------------
+# 8. Performance indicator function
+# ----------------------------
+calculate_huber_loss <- function(actual, predicted, delta = 1.0) {
+  residuals <- actual - predicted
+  huber_loss <- ifelse(abs(residuals) <= delta, 
+                       0.5 * residuals^2, 
+                       delta * (abs(residuals) - 0.5 * delta))
+  return(mean(huber_loss, na.rm = TRUE))
+}
+
+calculate_metrics <- function(actual, predicted, threshold = NULL) {
+  valid_indices <- which(!is.na(actual) & !is.na(predicted))
+  actual <- actual[valid_indices]
+  predicted <- predicted[valid_indices]
+  
+  residuals <- actual - predicted
+  mse <- mean(residuals^2, na.rm = TRUE)
+  huber <- calculate_huber_loss(actual, predicted)
+  mad <- median(abs(residuals), na.rm = TRUE)
+  mae <- mean(abs(residuals), na.rm = TRUE)
+  sr_pt <- calculate_sr_pt(actual, predicted, threshold)
+  
+  return(c(MSE = mse, Huber_Loss = huber, MAD = mad, MAE = mae, SR = sr_pt["SR"], PT = sr_pt["PT"]))
+}
+
+# ----------------------------
+# 9. Output result table
+# ----------------------------
+metrics_list <- list(
+  Hampel_ARIMA = calculate_metrics(test_actual, fc_arima_hampel, threshold = NULL),
+  RPCA_ARIMA   = calculate_metrics(test_actual, fc_arima_rpca, threshold = NULL)
+)
+
+result_df <- data.frame(
+  Model = names(metrics_list),
+  do.call(rbind, metrics_list)
+)
+
+kable(result_df, digits = 3, caption = "Model Performance: Robust AR with Hampel and RPCA") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
