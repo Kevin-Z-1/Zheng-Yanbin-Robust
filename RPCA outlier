@@ -1,4 +1,5 @@
-data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv")
+data <- read.csv("https://raw.githubusercontent.com/Kevin-Z-1/Zheng-Yanbin-Robust/main/388_converted.csv")
+
 
 if (!require("rpca")) install.packages("rpca")
 library(rpca)
