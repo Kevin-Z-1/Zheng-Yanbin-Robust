@@ -1,4 +1,4 @@
-# ----------------------------
+
 # install.packages("rpca")
 # install.packages("forecast")
 # install.packages("MASS")
@@ -9,10 +9,10 @@ library(MASS)
 library(knitr)
 library(kableExtra)
 
-# ----------------------------
 # 1. Data preparation
-# ----------------------------
-data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv", stringsAsFactors = FALSE)
+
+data <- read.csv("https://raw.githubusercontent.com/Kevin-Z-1/Zheng-Yanbin-Robust/main/388_converted.csv")
+
 colnames(data)[1] <- "date"
 colnames(data) <- trimws(colnames(data))
 data$date <- as.POSIXct(data$date, format = "%Y-%m-%d %H:%M:%S")
@@ -23,9 +23,9 @@ log_returns <- 100 * diff(log(data$GBP.to.JPY))
 data <- data[-1, ]
 data$log_returns <- log_returns
 
-# ----------------------------
+
 # 2. Hampel Remove local outlier
-# ----------------------------
+
 hampel_filter <- function(x, window_size = 11, k = 2) {
   n <- length(x)
   x_clean <- x
@@ -46,9 +46,9 @@ hampel_filter <- function(x, window_size = 11, k = 2) {
 }
 hampel_log_returns <- hampel_filter(data$log_returns)
 
-# ----------------------------
+
 # 3. RPCA Remove local anomalies
-# ----------------------------
+
 apply_rpca <- function(series) {
   rpca_result <- rpca(as.matrix(series))
   low_rank <- as.numeric(rpca_result$L)
@@ -56,15 +56,15 @@ apply_rpca <- function(series) {
 }
 rpca_log_returns <- apply_rpca(data$log_returns)
 
-# ----------------------------
+
 # 4. Differentiation to stabilize
-# ----------------------------
+
 diff_hampel_log_returns <- diff(hampel_log_returns)
 diff_rpca_log_returns <- diff(rpca_log_returns)
 
-# ----------------------------
+
 # 5. MA and RW Model Definition
-# ----------------------------
+
 rolling_forecast_rw <- function(data, window_size, test_length) {
   forecast_results <- c()
   for (i in 1:(length(data) - window_size - test_length)) {
@@ -83,9 +83,9 @@ rolling_forecast_ma <- function(data, window_size, test_length) {
   return(forecast_results)
 }
 
-# ----------------------------
+
 # 6. Split training set + generate predictions
-# ----------------------------
+
 window_size <- floor(0.8 * length(diff_hampel_log_returns))
 test_actual <- diff_hampel_log_returns[(window_size + 1):length(diff_hampel_log_returns)]
 
@@ -94,9 +94,9 @@ fc_ma_rpca   <- rolling_forecast_ma(diff_rpca_log_returns, window_size, test_len
 fc_rw_hampel <- rolling_forecast_rw(diff_hampel_log_returns, window_size, test_length = 1)
 fc_rw_rpca   <- rolling_forecast_rw(diff_rpca_log_returns, window_size, test_length = 1)
 
-# ----------------------------
+
 # 7. Evaluation index calculation function
-# ----------------------------
+
 calculate_sr_pt <- function(actual, predicted) {
   sr <- mean((sign(actual) == sign(predicted)) & (abs(actual - predicted) > 0.5), na.rm = TRUE)
   p_actual_up <- mean(actual > 0, na.rm = TRUE)
@@ -122,9 +122,9 @@ calculate_metrics <- function(actual, predicted) {
   return(c(MSE = mse, MAD = mad, MAE = mae, SR = sr_pt["SR"], PT = sr_pt["PT"]))
 }
 
-# ----------------------------
+
 # 8. Evaluate
-# ----------------------------
+
 metrics_list <- list(
   Hampel_MA = calculate_metrics(test_actual, fc_ma_hampel),
   RPCA_MA   = calculate_metrics(test_actual, fc_ma_rpca),
@@ -132,9 +132,9 @@ metrics_list <- list(
   RPCA_RW   = calculate_metrics(test_actual, fc_rw_rpca)
 )
 
-# ----------------------------
+
 # 9. Output table
-# ----------------------------
+
 result_df <- data.frame(
   Model = names(metrics_list),
   do.call(rbind, metrics_list)
