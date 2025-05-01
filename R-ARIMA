@@ -1,13 +1,13 @@
-# ----------------------------
+
 library(robustbase)
 library(rpca)
 library(knitr)
 library(kableExtra)
 
-# ----------------------------
 # 1. prepare
-# ----------------------------
-data <- read.csv("/Users/zhengyanbin/Documents/kevin files/大三/project/388_converted.csv", stringsAsFactors = FALSE)
+
+data <- read.csv("https://raw.githubusercontent.com/Kevin-Z-1/Zheng-Yanbin-Robust/main/388_converted.csv")
+
 colnames(data)[1] <- "date"
 colnames(data) <- trimws(colnames(data))
 data$date <- as.POSIXct(data$date, format = "%Y-%m-%d %H:%M:%S")
@@ -18,9 +18,8 @@ log_returns <- 100 * diff(log(data$GBP.to.JPY))
 data <- data[-1, ]  
 data$log_returns <- log_returns
 
-# ----------------------------
 # 2. Hampel 
-# ----------------------------
+
 hampel_filter <- function(x, window_size = 11, k = 2) {
   n <- length(x)
   x_clean <- x
@@ -41,9 +40,9 @@ hampel_filter <- function(x, window_size = 11, k = 2) {
 }
 hampel_log_returns <- hampel_filter(data$log_returns)
 
-# ----------------------------
+
 # 3. RPCA 
-# ----------------------------
+
 apply_rpca <- function(series) {
   rpca_result <- rpca(as.matrix(series))
   low_rank <- as.numeric(rpca_result$L)
@@ -51,15 +50,15 @@ apply_rpca <- function(series) {
 }
 rpca_log_returns <- apply_rpca(data$log_returns)
 
-# ----------------------------
+
 # 4. first di
-# ----------------------------
+
 diff_hampel_log_returns <- diff(hampel_log_returns)
 diff_rpca_log_returns <- diff(rpca_log_returns)
 
-# ----------------------------
+
 # 5. rolling
-# ----------------------------
+
 rolling_forecast_robust_ar <- function(data, ar_order = 1, window_size, test_length) {
   forecast_results <- c()
   for (i in 1:(length(data) - window_size - test_length)) {
@@ -85,20 +84,20 @@ rolling_forecast_robust_ar <- function(data, ar_order = 1, window_size, test_len
   return(forecast_results)
 }
 
-# ----------------------------
+
 # 6. Rolling forecasts are aligned with true values
-# ----------------------------
+
 window_size <- floor(0.8 * length(diff_hampel_log_returns))
 
 fc_arima_hampel <- rolling_forecast_robust_ar(diff_hampel_log_returns, ar_order = 1, window_size, test_length = 1)
 fc_arima_rpca   <- rolling_forecast_robust_ar(diff_rpca_log_returns, ar_order = 1, window_size, test_length = 1)
 
-# ⚠️Correct alignment:
+# Correct alignment:
 test_actual <- diff_hampel_log_returns[(window_size + 1):(length(diff_hampel_log_returns) - 1)]
 
-# ----------------------------
+
 # 7. SR + PT
-# ----------------------------
+
 calculate_sr_pt <- function(actual, predicted, threshold = NULL) {
   if (!is.null(threshold)) {
     sr <- mean((sign(actual) == sign(predicted)) & (abs(actual - predicted) > threshold), na.rm = TRUE)
@@ -118,9 +117,9 @@ calculate_sr_pt <- function(actual, predicted, threshold = NULL) {
   return(c(SR = sr, PT = pt))
 }
 
-# ----------------------------
+
 # 8. Performance indicator function
-# ----------------------------
+
 calculate_huber_loss <- function(actual, predicted, delta = 1.0) {
   residuals <- actual - predicted
   huber_loss <- ifelse(abs(residuals) <= delta, 
@@ -144,9 +143,9 @@ calculate_metrics <- function(actual, predicted, threshold = NULL) {
   return(c(MSE = mse, Huber_Loss = huber, MAD = mad, MAE = mae, SR = sr_pt["SR"], PT = sr_pt["PT"]))
 }
 
-# ----------------------------
+
 # 9. Output result table
-# ----------------------------
+
 metrics_list <- list(
   Hampel_ARIMA = calculate_metrics(test_actual, fc_arima_hampel, threshold = NULL),
   RPCA_ARIMA   = calculate_metrics(test_actual, fc_arima_rpca, threshold = NULL)
